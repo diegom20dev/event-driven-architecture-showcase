@@ -6,10 +6,10 @@ import { MatchEventsHub } from './match-events.hub';
 import { MATCH_MOVE_RECEIVED, TURN_JOB, TURNS_QUEUE, turnJobId } from './queue.constants';
 
 /**
- * Adaptador de `EventPublisher` sobre BullMQ. Enruta por `event.name`:
- *  - match.move_received → encola el job de procesamiento (cola 'turns').
- *  - resto (match.started / move_applied / finished) → bus SSE (MatchEventsHub)
- *    para notificar a los clientes suscritos, y log de observabilidad.
+ * `EventPublisher` adapter over BullMQ. Routes by `event.name`:
+ *  - match.move_received → enqueues the processing job (queue 'turns').
+ *  - others (match.started / move_applied / finished) → SSE bus (MatchEventsHub)
+ *    to notify subscribed clients, plus an observability log.
  */
 @Injectable()
 export class BullmqEventPublisher implements EventPublisher {
@@ -25,8 +25,8 @@ export class BullmqEventPublisher implements EventPublisher {
 
     if (event.name === MATCH_MOVE_RECEIVED) {
       const payload = event.payload as { clientMoveId: string };
-      // matchId vive en el nivel superior del evento: lo inyectamos en el job data
-      // para que ProcessTurnCommand quede completo ({ matchId, playerId, clientMoveId, payload }).
+      // matchId lives at the top level of the event: inject it into the job data so that
+      // ProcessTurnCommand is complete ({ matchId, playerId, clientMoveId, payload }).
       await this.turns.add(
         TURN_JOB,
         { matchId: event.matchId, ...event.payload },
@@ -34,7 +34,7 @@ export class BullmqEventPublisher implements EventPublisher {
       );
       return;
     }
-    // Notificación al cliente vía SSE.
+    // Notify the client via SSE.
     this.hub.emit(event);
   }
 }

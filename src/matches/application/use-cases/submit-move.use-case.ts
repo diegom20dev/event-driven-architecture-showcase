@@ -28,10 +28,11 @@ export class SubmitMoveUseCase {
   ) {}
 
   /**
-   * Productor asíncrono:
-   *   1. Fast-path: si el move existe, devuelve su estado/result (PENDING o DONE) sin re-encolar.
-   *   2. Nuevo: valida partida (404/409 síncronos), inserta PENDING y publica match.move_received.
-   *      El procesamiento real ocurre en el worker (TurnProcessor → ProcessTurnUseCase).
+   * Async producer:
+   *   1. Fast-path: if the move already exists, returns its status/result (PENDING or DONE)
+   *      without re-enqueuing.
+   *   2. New move: validates the match (synchronous 404/409), inserts PENDING, and publishes
+   *      match.move_received. Actual processing happens in the worker (TurnProcessor → ProcessTurnUseCase).
    */
   async execute(cmd: SubmitMoveCommand): Promise<SubmitMoveResult> {
     const existing = await this.moves.findByKey(cmd.matchId, cmd.clientMoveId);
@@ -58,7 +59,7 @@ export class SubmitMoveUseCase {
     });
 
     if (inserted) {
-      // El adaptador BullMQ enruta este evento a la cola 'turns' (jobId determinista).
+      // The BullMQ adapter routes this event to the 'turns' queue (deterministic jobId).
       await this.events.publish({
         name: 'match.move_received',
         matchId: cmd.matchId,

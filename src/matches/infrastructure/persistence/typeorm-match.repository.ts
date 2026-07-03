@@ -7,7 +7,7 @@ import { OptimisticLockError } from '../../domain/errors';
 import { MatchOrmEntity } from './match.orm-entity';
 import { MatchMapper } from './match.mapper';
 
-/** Adaptador TypeORM/Postgres del puerto `MatchRepository`. */
+/** TypeORM/Postgres adapter for the `MatchRepository` port. */
 @Injectable()
 export class TypeormMatchRepository implements MatchRepository {
   constructor(
@@ -18,15 +18,15 @@ export class TypeormMatchRepository implements MatchRepository {
   async save(match: Match): Promise<void> {
     const row = MatchMapper.toOrm(match);
 
-    // version 0 ⇒ partida nueva: INSERT con version inicial 1.
+    // version 0 → new match: INSERT with initial version 1.
     if (match.version === 0) {
       row.version = 1;
       await this.repo.insert(row);
       return;
     }
 
-    // Partida existente: CAS optimista por version (sin transacción). Si otro
-    // worker escribió entremedio, `affected === 0` → conflicto → el job reintenta.
+    // Existing match: optimistic CAS on version (no transaction). If another
+    // worker wrote in between, `affected === 0` → conflict → the job retries.
     const res = await this.repo
       .createQueryBuilder()
       .update(MatchOrmEntity)

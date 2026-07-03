@@ -8,7 +8,7 @@ export class CreateMatchUseCase {
   constructor(@Inject(MATCH_REPOSITORY) private readonly matches: MatchRepository) {}
 
   async execute(pointsToWin?: number): Promise<Match> {
-    // RPS: cupo fijo de 2 jugadores.
+    // RPS: fixed roster of 2 players.
     const match = Match.create(randomUUID(), 2, pointsToWin);
     await this.matches.save(match);
     return match;

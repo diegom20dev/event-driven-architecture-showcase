@@ -1,22 +1,16 @@
-/** Token de inyección para el puerto de publicación de eventos. */
+/** Injection token for the event-publishing port. */
 export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
 
-/** Evento de dominio: algo relevante que ocurrió y que otros pueden observar. */
+/** Domain event: something relevant that happened and that others can observe. */
 export interface DomainEvent<T = Record<string, unknown>> {
-  /** Nombre estable del evento, p.ej. `match.started`, `match.move_applied`. */
+  /** Stable event name, e.g. `match.started`, `match.move_applied`. */
   name: string;
   matchId: string;
   occurredAt: Date;
   payload?: T;
 }
 
-/**
- * Puerto de salida para emitir eventos de dominio.
- *
- * Fase 1: una implementación que solo registra en log.
- * TODO(Fase 2): adaptador BullMQ/Redis (y el puerto permite cambiar a SQS sin
- * tocar el dominio).
- */
+/** Output port for emitting domain events. */
 export interface EventPublisher {
   publish(event: DomainEvent): Promise<void>;
 }

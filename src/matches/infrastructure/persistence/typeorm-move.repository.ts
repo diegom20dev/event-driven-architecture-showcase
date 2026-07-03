@@ -4,7 +4,7 @@ import { MoveRecord, MoveRepository } from '../../application/ports/move-reposit
 import { OptimisticLockError } from '../../domain/errors';
 import { MoveOrmEntity } from './move.orm-entity';
 
-/** Adaptador TypeORM/Postgres del puerto `MoveRepository`. */
+/** TypeORM/Postgres adapter for the `MoveRepository` port. */
 @Injectable()
 export class TypeormMoveRepository implements MoveRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -31,15 +31,15 @@ export class TypeormMoveRepository implements MoveRepository {
         payload: input.payload,
         status: 'PENDING',
         result: null,
-        // TypeORM NO autosetea @VersionColumn en INSERT vía QueryBuilder (solo en save()),
-        // y la columna es NOT NULL: hay que sembrar la versión inicial explícitamente.
+        // TypeORM does NOT auto-set @VersionColumn on INSERT via QueryBuilder (only on save()),
+        // and the column is NOT NULL: we must seed the initial version explicitly.
         version: 1,
       })
       .orIgnore() // INSERT ... ON CONFLICT DO NOTHING
       .returning('id')
       .execute();
-    // `raw` son las filas realmente devueltas por RETURNING: vacío ⇒ hubo conflicto
-    // (no insertó). `identifiers` no es fiable con .orIgnore() (puede traer [{}]).
+    // `raw` contains the rows actually returned by RETURNING: empty → conflict (no insert).
+    // `identifiers` is unreliable with .orIgnore() (may return [{}]).
     return { inserted: Array.isArray(res.raw) && res.raw.length > 0 };
   }
 
@@ -51,9 +51,9 @@ export class TypeormMoveRepository implements MoveRepository {
     },
     expectedVersion: number,
   ): Promise<void> {
-    // CAS optimista: TypeORM añade `version = version + 1` automáticamente al ser un
-    // UpdateQueryBuilder con metadata; nosotros ponemos el `WHERE version = :expected`
-    // y detectamos el conflicto por affected === 0 (rowCount en Postgres).
+    // Optimistic CAS: TypeORM automatically adds `version = version + 1` for
+    // UpdateQueryBuilder with entity metadata; we add `WHERE version = :expected`
+    // and detect conflicts via affected === 0 (rowCount in Postgres).
     const res = await this.dataSource
       .createQueryBuilder()
       .update(MoveOrmEntity)
@@ -77,8 +77,8 @@ export class TypeormMoveRepository implements MoveRepository {
   }
 
   async markFailed(matchId: string, clientMoveId: string): Promise<void> {
-    // Guard `status: 'PENDING'`: si el move ya llegó a DONE (p.ej. un reintento
-    // tardío tras un complete concurrente), no lo revertimos a FAILED.
+    // Guard `status: 'PENDING'`: if the move already reached DONE (e.g. a late retry
+    // after a concurrent complete), do not revert it to FAILED.
     await this.dataSource
       .getRepository(MoveOrmEntity)
       .update({ matchId, clientMoveId, status: 'PENDING' }, { status: 'FAILED' });

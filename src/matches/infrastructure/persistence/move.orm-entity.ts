@@ -12,9 +12,9 @@ import { MatchOrmEntity } from './match.orm-entity';
 import { MoveStatus } from '../../application/ports/move-repository.port';
 
 /**
- * Tabla `moves`: registra cada jugada y sirve de control de idempotencia.
- * El UNIQUE(matchId, clientMoveId) es la red de seguridad real ante reintentos
- * concurrentes (ver docs/plans/2026-06-29-moves-idempotency-design.md).
+ * Table `moves`: records each move submission and serves as an idempotency log.
+ * The UNIQUE(matchId, clientMoveId) constraint is the real safety net against
+ * concurrent retries.
  */
 @Entity('moves')
 @Unique('uq_moves_match_client', ['matchId', 'clientMoveId'])
@@ -29,25 +29,25 @@ export class MoveOrmEntity {
   @JoinColumn({ name: 'match_id' })
   match?: MatchOrmEntity;
 
-  /** idempotencyKey provista por el cliente. */
+  /** Idempotency key provided by the client. */
   @Column({ type: 'uuid', name: 'client_move_id' })
   clientMoveId: string;
 
   @Column({ type: 'jsonb' })
   payload: Record<string, unknown>;
 
-  /** Estado del procesamiento asíncrono. */
+  /** Async processing status. */
   @Column({ type: 'varchar', length: 16, default: 'PENDING' })
   status: MoveStatus;
 
-  /** Resultado; null mientras está PENDING. */
+  /** Result; null while PENDING. */
   @Column({ type: 'jsonb', nullable: true })
   result: Record<string, unknown> | null;
 
   /**
-   * Token de optimistic locking. TypeORM lo autoincrementa en cada UPDATE con
-   * metadata de entidad; la verificación (WHERE version=:expected) la hace el
-   * adaptador manualmente porque el repo usa QueryBuilder.update(), no save().
+   * Optimistic locking token. TypeORM auto-increments it on every UPDATE with
+   * entity metadata; the WHERE version=:expected check is done manually by the
+   * adapter because the repository uses QueryBuilder.update(), not save().
    */
   @VersionColumn()
   version: number;

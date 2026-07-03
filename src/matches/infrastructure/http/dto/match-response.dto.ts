@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Match } from '../../../domain/match';
 import { MatchStatus } from '../../../domain/match-status';
 
-/** Representación HTTP de una partida (vista pública del agregado). */
+/** HTTP representation of a match (public view of the aggregate). */
 export class MatchResponseDto {
   @ApiProperty({ format: 'uuid', example: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e' })
   id: string;
@@ -19,16 +19,16 @@ export class MatchResponseDto {
   @ApiProperty({ example: 0 })
   version: number;
 
-  @ApiProperty({ example: 2, description: 'Cupo de jugadores que dispara el arranque.' })
+  @ApiProperty({ example: 2, description: 'Player roster size that triggers match start.' })
   expectedPlayers: number;
 
-  @ApiProperty({ example: 3, description: 'Puntos para ganar.' })
+  @ApiProperty({ example: 3, description: 'Points needed to win.' })
   pointsToWin: number;
 
-  @ApiProperty({ example: 1, description: 'Ronda actual.' })
+  @ApiProperty({ example: 1, description: 'Current round.' })
   roundNumber: number;
 
-  @ApiProperty({ example: { 'player-1': 2, 'player-2': 1 }, description: 'Puntaje por jugador.' })
+  @ApiProperty({ example: { 'player-1': 2, 'player-2': 1 }, description: 'Score per player.' })
   scores: Record<string, number>;
 
   @ApiProperty({ format: 'date-time' })
@@ -55,7 +55,7 @@ export class MatchResponseDto {
   }
 }
 
-/** Respuesta de `POST /matches/:id/moves` (async: 202 PENDING). */
+/** Response for `POST /matches/:id/moves` (async: 202 PENDING). */
 export class SubmitMoveResponseDto {
   @ApiProperty({ format: 'uuid' })
   matchId: string;
@@ -66,9 +66,9 @@ export class SubmitMoveResponseDto {
   @ApiProperty({ enum: ['PENDING', 'DONE', 'FAILED'], example: 'PENDING' })
   status: 'PENDING' | 'DONE' | 'FAILED';
 
-  @ApiProperty({ nullable: true, description: 'null mientras PENDING', example: null })
+  @ApiProperty({ nullable: true, description: 'null while PENDING', example: null })
   result: Record<string, unknown> | null;
 
-  @ApiProperty({ example: false, description: 'true si fue un reintento idempotente' })
+  @ApiProperty({ example: false, description: 'true if this was an idempotent retry' })
   deduplicated: boolean;
 }

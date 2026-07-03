@@ -6,7 +6,7 @@ export class CreateMatchDto {
     minimum: 1,
     default: 1,
     example: 1,
-    description: 'Puntos necesarios para ganar (default 1 → "una mano decide").',
+    description: 'Points needed to win (default 1 → "one round decides").',
   })
   @IsOptional()
   @IsInt()

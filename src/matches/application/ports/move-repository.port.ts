@@ -1,4 +1,4 @@
-/** Token de inyección para el puerto de persistencia de jugadas. */
+/** Injection token for the move persistence port. */
 export const MOVE_REPOSITORY = Symbol('MOVE_REPOSITORY');
 
 export type MoveStatus = 'PENDING' | 'DONE' | 'FAILED';
@@ -6,21 +6,21 @@ export type MoveStatus = 'PENDING' | 'DONE' | 'FAILED';
 export interface MoveRecord {
   status: MoveStatus;
   result: Record<string, unknown> | null;
-  /** Token de optimistic lock; se pasa de vuelta a `complete` como versión esperada. */
+  /** Optimistic lock token; passed back to `complete` as the expected version. */
   version: number;
 }
 
 /**
- * Puerto de persistencia de jugadas. La idempotencia por (matchId, clientMoveId)
- * vive en el adaptador; el dominio/aplicación no conocen TypeORM.
+ * Persistence port for moves. Idempotency by (matchId, clientMoveId)
+ * is enforced by the adapter; domain/application have no knowledge of TypeORM.
  */
 export interface MoveRepository {
-  /** Devuelve el move (estado + result), o null si no existe. */
+  /** Returns the move (status + result), or null if it does not exist. */
   findByKey(matchId: string, clientMoveId: string): Promise<MoveRecord | null>;
 
   /**
-   * Inserta el move en estado PENDING (result=null) de forma idempotente.
-   * inserted=false si (matchId, clientMoveId) ya existía (evita doble-encolado).
+   * Inserts the move in PENDING state (result=null) idempotently.
+   * inserted=false if (matchId, clientMoveId) already existed (prevents double-enqueue).
    */
   insertPending(input: {
     matchId: string;
@@ -29,9 +29,9 @@ export interface MoveRepository {
   }): Promise<{ inserted: boolean }>;
 
   /**
-   * Marca el move como DONE con su result (lo llama el worker). Optimistic lock:
-   * solo aplica si la version en DB sigue siendo `expectedVersion`; si otro
-   * escritor la cambió, lanza `OptimisticLockError`.
+   * Marks the move as DONE with its result (called by the worker). Optimistic lock:
+   * only applies if the version in the DB is still `expectedVersion`; if another
+   * writer changed it, throws `OptimisticLockError`.
    */
   complete(
     input: {
@@ -42,6 +42,6 @@ export interface MoveRepository {
     expectedVersion: number,
   ): Promise<void>;
 
-  /** Marca el move como FAILED (worker agotó reintentos). */
+  /** Marks the move as FAILED (worker exhausted retries). */
   markFailed(matchId: string, clientMoveId: string): Promise<void>;
 }

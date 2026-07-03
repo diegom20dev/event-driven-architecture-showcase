@@ -1,8 +1,8 @@
 /**
- * Estados de una partida y las transiciones válidas entre ellos.
+ * Match states and the valid transitions between them.
  *
- * Regla de oro (ver README): la máquina de estados vive en el dominio.
- * Ni el controller ni el repositorio deciden transiciones; solo el dominio.
+ * The state machine lives in the domain. Neither the controller nor the repository
+ * decides transitions — only the domain does.
  */
 export enum MatchStatus {
   CREATED = 'CREATED',
@@ -13,12 +13,12 @@ export enum MatchStatus {
 }
 
 /**
- * Grafo de transiciones permitidas.
+ * Allowed transition graph.
  *
  *   CREATED ──► WAITING_PLAYERS ──► IN_PROGRESS ──► FINISHED
  *      └───────────────┴──────── cancel ──────┴──► CANCELLED
  *
- * FINISHED y CANCELLED son terminales (sin salidas).
+ * FINISHED and CANCELLED are terminal (no outgoing transitions).
  */
 export const MATCH_TRANSITIONS: Readonly<Record<MatchStatus, readonly MatchStatus[]>> = {
   [MatchStatus.CREATED]: [MatchStatus.WAITING_PLAYERS, MatchStatus.CANCELLED],

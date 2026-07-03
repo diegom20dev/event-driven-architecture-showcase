@@ -65,8 +65,8 @@ const cmd = (playerId: string, clientMoveId: string, round: number, move: Move):
   payload: { round, move },
 });
 
-describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
-  it('registra la jugada sin resolver la ronda y publica match.move_applied', async () => {
+describe('ProcessTurnUseCase (rock-paper-scissors)', () => {
+  it('records the move without resolving the round and publishes match.move_applied', async () => {
     const match = inProgress(3);
     const moves = new FakeMoveRepository();
     moves.seed('c1');
@@ -80,8 +80,8 @@ describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
     expect(match.roundNumber).toBe(1);
   });
 
-  it('la última jugada resuelve la ronda y, al ganar, publica match.finished', async () => {
-    const match = inProgress(1); // primero a 1 punto
+  it('the last move resolves the round and, on win, publishes match.finished', async () => {
+    const match = inProgress(1); // first to 1 point
     const moves = new FakeMoveRepository();
     moves.seed('c1');
     moves.seed('c2');
@@ -89,7 +89,7 @@ describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
     const uc = new ProcessTurnUseCase(new FakeMatchRepository(match), moves, events);
 
     await uc.execute(cmd('p1', 'c1', 1, Move.ROCK));
-    await uc.execute(cmd('p2', 'c2', 1, Move.SCISSORS)); // rock vence scissors
+    await uc.execute(cmd('p2', 'c2', 1, Move.SCISSORS)); // rock beats scissors
 
     expect(match.status).toBe('FINISHED');
     expect(match.winnerId).toBe('p1');
@@ -97,7 +97,7 @@ describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
     expect(events.names()).toContain('match.finished');
   });
 
-  it('es idempotente: si el move ya está DONE no reprocesa ni reemite', async () => {
+  it('is idempotent: a DONE move is not reprocessed or re-emitted', async () => {
     const match = inProgress(3);
     const moves = new FakeMoveRepository();
     moves.seed('c1', { status: 'DONE', result: {}, version: 2 });
@@ -110,7 +110,7 @@ describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
     expect(events.events).toHaveLength(0);
   });
 
-  it('propaga OptimisticLockError si el save del match detecta conflicto', async () => {
+  it('propagates OptimisticLockError when the match save detects a conflict', async () => {
     const match = inProgress(3);
     const repo = new FakeMatchRepository(match);
     repo.save = async () => {
@@ -126,33 +126,33 @@ describe('ProcessTurnUseCase (piedra-papel-tijera)', () => {
     expect(moves.completed['c1']).toBeUndefined();
   });
 
-  it('lanza MoveNotFoundError si el move PENDING no existe', async () => {
+  it('throws MoveNotFoundError when the PENDING move does not exist', async () => {
     const match = inProgress(3);
-    const moves = new FakeMoveRepository(); // sin seed
+    const moves = new FakeMoveRepository(); // no seed
     const events = new FakeEventPublisher();
     const uc = new ProcessTurnUseCase(new FakeMatchRepository(match), moves, events);
 
     await expect(uc.execute(cmd('p1', 'c1', 1, Move.ROCK))).rejects.toBeInstanceOf(MoveNotFoundError);
   });
 
-  it('retry tras FINISHED: completa el move (no falla) y NO re-emite match.finished', async () => {
-    // Simula que el juego ya terminó pero el move que lo cerró quedó PENDING (crash
-    // entre save-match y complete-move). El reintento no debe lanzar ni duplicar finished.
+  it('retry after FINISHED: completes the move (no throw) and does NOT re-emit match.finished', async () => {
+    // Simulates the match having finished but the move that closed it is still PENDING
+    // (crash between save-match and complete-move). The retry must not throw or duplicate finished.
     const match = inProgress(1);
     match.playMove('p1', 1, Move.ROCK);
-    match.playMove('p2', 1, Move.SCISSORS); // FINISHED, ganó p1
+    match.playMove('p2', 1, Move.SCISSORS); // FINISHED, p1 won
     const moves = new FakeMoveRepository();
-    moves.seed('c2'); // el move de p2 (que cerró) sigue PENDING
+    moves.seed('c2'); // the closing move is still PENDING
     const events = new FakeEventPublisher();
     const uc = new ProcessTurnUseCase(new FakeMatchRepository(match), moves, events);
 
     await uc.execute(cmd('p2', 'c2', 1, Move.SCISSORS));
 
-    expect(moves.completed['c2']).toBeDefined(); // el move llega a DONE
-    expect(events.names()).toEqual(['match.move_applied']); // sin match.finished
+    expect(moves.completed['c2']).toBeDefined(); // move reaches DONE
+    expect(events.names()).toEqual(['match.move_applied']); // no match.finished
   });
 
-  it('lanza MatchNotFoundError si la partida no existe', async () => {
+  it('throws MatchNotFoundError when the match does not exist', async () => {
     const moves = new FakeMoveRepository();
     moves.seed('c1');
     const events = new FakeEventPublisher();

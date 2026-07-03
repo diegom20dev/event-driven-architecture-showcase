@@ -10,10 +10,10 @@ import {
   PlayerNotInMatchError,
 } from './errors';
 
-/** Piedra-papel-tijera es de exactamente 2 jugadores. */
+/** Rock-Paper-Scissors requires exactly 2 players. */
 export const MAX_PLAYERS = 2;
 
-/** Snapshot plano para persistencia/serialización. El dominio no conoce TypeORM. */
+/** Flat snapshot for persistence/serialisation. The domain has no knowledge of TypeORM. */
 export interface MatchSnapshot {
   id: string;
   status: MatchStatus;
@@ -23,16 +23,16 @@ export interface MatchSnapshot {
   expectedPlayers: number;
   pointsToWin: number;
   roundNumber: number;
-  /** Jugadas de la ronda ACTUAL, por jugador. Se limpia al resolver la ronda. */
+  /** Moves for the CURRENT round, keyed by player. Cleared when the round resolves. */
   choices: Record<string, Move>;
   scores: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-/** Resultado de aplicar una jugada (para construir el `result` del move). */
+/** Result of applying a move (used to build the move `result` record). */
 export interface PlayMoveResult {
-  /** false si fue un replay/ronda pasada (idempotente, no cuenta doble). */
+  /** false if this was a replay or a stale-round submission (idempotent, not double-counted). */
   accepted: boolean;
   roundNumber: number;
   roundResolved: boolean;
@@ -42,10 +42,10 @@ export interface PlayMoveResult {
 }
 
 /**
- * Agregado raíz `Match`. Encapsula la máquina de estados y las invariantes del dominio.
+ * Root aggregate `Match`. Encapsulates the state machine and domain invariants.
  *
- * Toda mutación pasa por un método de negocio (`join`, `cancel`, `submitMove`) que valida
- * la transición antes de cambiar el estado. El estado nunca se muta desde fuera.
+ * All mutations go through a business method (`join`, `cancel`, `playMove`) that validates
+ * the transition before changing state. State is never mutated from outside.
  */
 export class Match {
   private constructor(
@@ -63,11 +63,11 @@ export class Match {
     private _updatedAt: Date,
   ) {}
 
-  // ── Fábricas ──────────────────────────────────────────────────────────────
+  // ── Factories ────────────────────────────────────────────────────────────
 
   /**
-   * Crea una partida nueva en estado CREATED. RPS es de exactamente 2 jugadores;
-   * `pointsToWin` es la meta de puntos (default 1 → "una mano decide").
+   * Creates a new match in CREATED state. RPS requires exactly 2 players;
+   * `pointsToWin` is the score target (default 1 → "one round decides").
    */
   static create(
     id: string,
@@ -84,7 +84,7 @@ export class Match {
     return new Match(id, MatchStatus.CREATED, [], null, 0, expectedPlayers, pointsToWin, 1, {}, {}, now, now);
   }
 
-  /** Reconstruye un agregado desde un snapshot (lo usa el repositorio). */
+  /** Rebuilds an aggregate from a snapshot (used by the repository). */
   static rehydrate(s: MatchSnapshot): Match {
     return new Match(
       s.id,
@@ -102,7 +102,7 @@ export class Match {
     );
   }
 
-  // ── Lectura ───────────────────────────────────────────────────────────────
+  // ── Reads ────────────────────────────────────────────────────────────────
 
   get status(): MatchStatus {
     return this._status;
@@ -157,11 +157,11 @@ export class Match {
     };
   }
 
-  // ── Comandos de negocio ─────────────────────────────────────────────────────
+  // ── Business commands ────────────────────────────────────────────────────
 
   /**
-   * Une un jugador. El primer jugador mueve CREATED → WAITING_PLAYERS;
-   * al completarse el cupo (`expectedPlayers`) la partida arranca → IN_PROGRESS.
+   * Adds a player to the match. The first player moves CREATED → WAITING_PLAYERS;
+   * filling the roster (`expectedPlayers`) starts the match → IN_PROGRESS.
    */
   join(playerId: string, now: Date = new Date()): void {
     if (isTerminal(this._status)) {
@@ -185,15 +185,15 @@ export class Match {
     this.touch(now);
   }
 
-  /** Aborta la partida desde cualquier estado no terminal. */
+  /** Aborts the match from any non-terminal state. */
   cancel(now: Date = new Date()): void {
     this.transitionTo(MatchStatus.CANCELLED);
     this.touch(now);
   }
 
   /**
-   * Valida la precondición síncrona de un turno (partida IN_PROGRESS). La usa el
-   * productor HTTP antes de encolar; la aplicación real de la jugada es `playMove`.
+   * Validates the synchronous precondition for a turn (match must be IN_PROGRESS).
+   * Called by the HTTP producer before enqueuing; the actual move application is `playMove`.
    */
   assertCanSubmitMove(): void {
     if (this._status !== MatchStatus.IN_PROGRESS) {
@@ -202,13 +202,12 @@ export class Match {
   }
 
   /**
-   * Aplica la jugada RPS de un jugador a la ronda actual.
+   * Applies a player's RPS move to the current round.
    *
-   * Idempotente: registrar la misma jugada del mismo jugador, o una jugada de una
-   * ronda ya pasada, no cuenta doble (devuelve `accepted:false`). Cuando ambos
-   * jugadores han jugado, resuelve la ronda con las reglas de piedra-papel-tijera
-   * (empate → ronda sin punto), avanza la ronda y, si alguien llega a `pointsToWin`,
-   * transiciona IN_PROGRESS → FINISHED fijando `winnerId`.
+   * Idempotent: submitting the same move by the same player, or a move for a past round,
+   * does not double-count (returns `accepted:false`). When both players have played, resolves
+   * the round using RPS rules (tie → no point), advances the round, and transitions
+   * IN_PROGRESS → FINISHED (setting `winnerId`) if someone reaches `pointsToWin`.
    */
   playMove(playerId: string, roundNumber: number, move: Move, now: Date = new Date()): PlayMoveResult {
     if (!this._players.includes(playerId)) {
@@ -218,9 +217,10 @@ export class Match {
       throw new InvalidRoundError(this.id, roundNumber, this._roundNumber);
     }
 
-    // Idempotencia ante reintento (crash entre save-match y complete-move, o entrega
-    // duplicada): si el juego ya terminó o la ronda ya se cerró, es no-op — el move se
-    // completará igual. Va ANTES de assertCanSubmitMove para no fallar sobre un FINISHED.
+    // Idempotency on retry (crash between save-match and complete-move, or duplicate delivery):
+    // if the match is already FINISHED or the round is already closed, this is a no-op —
+    // the move will still be completed. Must come BEFORE assertCanSubmitMove to avoid
+    // throwing on a FINISHED match.
     if (this._status === MatchStatus.FINISHED || roundNumber < this._roundNumber) {
       return this.unchangedResult(roundNumber);
     }
@@ -233,7 +233,7 @@ export class Match {
       throw new InvalidRoundError(this.id, roundNumber, this._roundNumber);
     }
 
-    // Jugada ya registrada este round → idempotente (no cuenta doble).
+    // Move already recorded for this round → idempotent (no double-count).
     if (this._choices[playerId] !== undefined) {
       return this.unchangedResult(roundNumber);
     }
@@ -255,10 +255,10 @@ export class Match {
     return this.resolveRound(roundNumber, now);
   }
 
-  // ── Interno ─────────────────────────────────────────────────────────────────
+  // ── Internal ─────────────────────────────────────────────────────────────
 
   private resolveRound(roundNumber: number, now: Date): PlayMoveResult {
-    // RPS es de 2 jugadores: hay exactamente dos entradas en choices.
+    // RPS has exactly 2 players, so choices always has exactly two entries.
     const [[pA, mA], [pB, mB]] = Object.entries(this._choices);
     const outcome = resolveRps(mA, mB);
     const roundWinnerId = outcome === 'TIE' ? null : outcome === 'A' ? pA : pB;

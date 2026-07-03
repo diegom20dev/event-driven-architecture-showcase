@@ -26,8 +26,8 @@ import { MatchResponseDto, SubmitMoveResponseDto } from './dto/match-response.dt
 import { MoveStatusResponseDto } from './dto/move-status-response.dto';
 
 /**
- * Adaptador HTTP de entrada. Es delgado por diseño: traduce request → caso de uso
- * y dominio → DTO. Ninguna regla de negocio vive aquí.
+ * HTTP input adapter. Intentionally thin: translates request → use case
+ * and domain → DTO. No business logic lives here.
  */
 @ApiTags('matches')
 @Controller('matches')
@@ -43,7 +43,7 @@ export class MatchesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Crear una partida (estado inicial CREATED)' })
+  @ApiOperation({ summary: 'Create a match (initial state: CREATED)' })
   @ApiResponse({ status: 201, type: MatchResponseDto })
   async create(@Body() dto: CreateMatchDto): Promise<MatchResponseDto> {
     const match = await this.createMatch.execute(dto.pointsToWin);
@@ -52,11 +52,11 @@ export class MatchesController {
 
   @Post(':id/join')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Unirse a una partida' })
+  @ApiOperation({ summary: 'Join a match' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: MatchResponseDto })
-  @ApiResponse({ status: 404, description: 'La partida no existe' })
-  @ApiResponse({ status: 409, description: 'Cupo lleno / jugador repetido / estado inválido' })
+  @ApiResponse({ status: 404, description: 'Match not found' })
+  @ApiResponse({ status: 409, description: 'Roster full / duplicate player / invalid state' })
   async join(@Param('id') id: string, @Body() dto: JoinMatchDto): Promise<MatchResponseDto> {
     const match = await this.joinMatch.execute(id, dto.playerId);
     return MatchResponseDto.fromDomain(match);
@@ -64,15 +64,16 @@ export class MatchesController {
 
   @Post(':id/moves')
   @ApiOperation({
-    summary: 'Enviar una jugada (asíncrona, idempotente vía clientMoveId)',
+    summary: 'Submit a move (async, idempotent via clientMoveId)',
     description:
-      'Encola la jugada y responde 202 PENDING. Un reintento ya procesado devuelve 200 DONE. Consulta el resultado con GET /matches/:id/moves/:clientMoveId.',
+      'Enqueues the move and responds 202 PENDING. A retry that was already processed returns 200 DONE. ' +
+      'Poll the result with GET /matches/:id/moves/:clientMoveId.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 202, type: SubmitMoveResponseDto, description: 'Encolada (PENDING)' })
-  @ApiResponse({ status: 200, type: SubmitMoveResponseDto, description: 'Ya procesada (DONE)' })
-  @ApiResponse({ status: 404, description: 'La partida no existe' })
-  @ApiResponse({ status: 409, description: 'La partida no está IN_PROGRESS' })
+  @ApiResponse({ status: 202, type: SubmitMoveResponseDto, description: 'Enqueued (PENDING)' })
+  @ApiResponse({ status: 200, type: SubmitMoveResponseDto, description: 'Already processed (DONE)' })
+  @ApiResponse({ status: 404, description: 'Match not found' })
+  @ApiResponse({ status: 409, description: 'Match is not IN_PROGRESS' })
   async move(
     @Param('id') id: string,
     @Body() dto: SubmitMoveDto,
@@ -89,11 +90,11 @@ export class MatchesController {
   }
 
   @Get(':id/moves/:clientMoveId')
-  @ApiOperation({ summary: 'Consultar el estado/result de una jugada (polling)' })
+  @ApiOperation({ summary: 'Poll the status/result of a move' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiParam({ name: 'clientMoveId', format: 'uuid' })
   @ApiResponse({ status: 200, type: MoveStatusResponseDto })
-  @ApiResponse({ status: 404, description: 'La jugada no existe' })
+  @ApiResponse({ status: 404, description: 'Move not found' })
   async getMove(
     @Param('id') id: string,
     @Param('clientMoveId') clientMoveId: string,
@@ -103,10 +104,10 @@ export class MatchesController {
 
   @Sse(':id/events')
   @ApiOperation({
-    summary: 'Stream de eventos de la partida en tiempo real (SSE)',
+    summary: 'Real-time match event stream (SSE)',
     description:
-      'Server-Sent Events: emite match.started, match.move_applied y match.finished ' +
-      'de esta partida. Evita el polling de GET /matches/:id.',
+      'Server-Sent Events: emits match.started, match.move_applied and match.finished ' +
+      'for this match. Avoids polling GET /matches/:id.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   events(@Param('id') id: string): Observable<MessageEvent> {
@@ -114,10 +115,10 @@ export class MatchesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Consultar el estado de una partida' })
+  @ApiOperation({ summary: 'Get match state' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, type: MatchResponseDto })
-  @ApiResponse({ status: 404, description: 'La partida no existe' })
+  @ApiResponse({ status: 404, description: 'Match not found' })
   async findOne(@Param('id') id: string): Promise<MatchResponseDto> {
     const match = await this.getMatch.execute(id);
     return MatchResponseDto.fromDomain(match);

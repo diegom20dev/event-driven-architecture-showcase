@@ -14,8 +14,8 @@ import {
 } from '../../domain/errors';
 
 /**
- * Traduce errores de dominio (puros) a respuestas HTTP. Así el dominio nunca
- * importa NestJS: la frontera HTTP es responsabilidad de la infraestructura.
+ * Translates pure domain errors to HTTP responses. This keeps the domain free of
+ * NestJS imports: the HTTP boundary is the responsibility of the infrastructure layer.
  */
 @Catch(DomainError)
 export class DomainExceptionFilter implements ExceptionFilter {

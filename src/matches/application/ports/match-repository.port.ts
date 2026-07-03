@@ -1,11 +1,11 @@
 import { Match } from '../../domain/match';
 
-/** Token de inyección para el puerto (la implementación vive en infrastructure). */
+/** Injection token for the port (the implementation lives in infrastructure). */
 export const MATCH_REPOSITORY = Symbol('MATCH_REPOSITORY');
 
 /**
- * Puerto de persistencia del agregado `Match`.
- * El dominio/aplicación dependen de esta interfaz, nunca de TypeORM.
+ * Persistence port for the `Match` aggregate.
+ * Domain/application layers depend on this interface, never on TypeORM.
  */
 export interface MatchRepository {
   save(match: Match): Promise<void>;

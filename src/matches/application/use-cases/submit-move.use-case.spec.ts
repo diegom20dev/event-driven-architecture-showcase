@@ -52,7 +52,7 @@ const inProgressMatch = () => {
   return m;
 };
 
-describe('SubmitMoveUseCase (productor async)', () => {
+describe('SubmitMoveUseCase (async producer)', () => {
   const cmd = {
     matchId: 'm1',
     playerId: 'p1',
@@ -60,7 +60,7 @@ describe('SubmitMoveUseCase (productor async)', () => {
     payload: { action: 'attack' },
   };
 
-  it('jugada nueva: encola (publica match.move_received), responde PENDING', async () => {
+  it('new move: enqueues (publishes match.move_received), responds PENDING', async () => {
     const moves = new FakeMoveRepository();
     const events = new FakeEventPublisher();
     const uc = new SubmitMoveUseCase(new FakeMatchRepository(inProgressMatch()), moves, events);
@@ -74,7 +74,7 @@ describe('SubmitMoveUseCase (productor async)', () => {
     expect(events.events[0].name).toBe('match.move_received');
   });
 
-  it('reintento PENDING: deduplicated=true, sin re-encolar', async () => {
+  it('PENDING retry: deduplicated=true, no re-enqueue', async () => {
     const moves = new FakeMoveRepository();
     moves.seed(cmd.matchId, cmd.clientMoveId, { status: 'PENDING', result: null, version: 0 });
     const events = new FakeEventPublisher();
@@ -87,7 +87,7 @@ describe('SubmitMoveUseCase (productor async)', () => {
     expect(events.events).toHaveLength(0);
   });
 
-  it('reintento DONE: devuelve el result guardado y deduplicated=true', async () => {
+  it('DONE retry: returns the stored result and deduplicated=true', async () => {
     const moves = new FakeMoveRepository();
     moves.seed(cmd.matchId, cmd.clientMoveId, {
       status: 'DONE',
@@ -104,7 +104,7 @@ describe('SubmitMoveUseCase (productor async)', () => {
     expect((res.result as any).echo).toEqual({ action: 'attack' });
   });
 
-  it('lanza MatchNotFoundError si es nueva y la partida no existe', async () => {
+  it('throws MatchNotFoundError when the move is new and the match does not exist', async () => {
     const uc = new SubmitMoveUseCase(
       new FakeMatchRepository(null),
       new FakeMoveRepository(),
@@ -113,7 +113,7 @@ describe('SubmitMoveUseCase (productor async)', () => {
     await expect(uc.execute(cmd)).rejects.toBeInstanceOf(MatchNotFoundError);
   });
 
-  it('lanza MoveNotAllowedError si la partida no está IN_PROGRESS', async () => {
+  it('throws MoveNotAllowedError when the match is not IN_PROGRESS', async () => {
     const uc = new SubmitMoveUseCase(
       new FakeMatchRepository(Match.create('m1')),
       new FakeMoveRepository(),

@@ -7,20 +7,20 @@ import { DomainExceptionFilter } from './matches/infrastructure/http/domain-exce
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Validación de DTOs en la frontera HTTP.
+  // Validate DTOs at the HTTP boundary.
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
 
   app.setGlobalPrefix('/api');
 
-  // Errores de dominio → HTTP (el dominio no conoce NestJS).
+  // Map domain errors → HTTP (the domain has no knowledge of NestJS).
   app.useGlobalFilters(new DomainExceptionFilter());
 
-  // Swagger / OpenAPI en /docs.
+  // Swagger / OpenAPI at /docs.
   const config = new DocumentBuilder()
     .setTitle('Match Engine')
-    .setDescription('Motor de partidas por turnos (máquina de estados + eventos). Fase 1.')
+    .setDescription('Turn-based match engine (state machine + async events).')
     .setVersion('1.0')
     .addTag('matches')
     .addTag('health')

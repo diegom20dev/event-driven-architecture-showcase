@@ -21,23 +21,23 @@ export class ProcessTurnUseCase {
   ) {}
 
   /**
-   * Consumidor (worker) del juego piedra-papel-tijera. Idempotente por varias capas:
-   *  - move ya DONE → no-op;
-   *  - `playCard` es idempotente (carta ya registrada / ronda pasada → accepted:false);
-   *  - CAS sobre `matches.version` y `moves.version`.
+   * Worker consumer for the Rock-Paper-Scissors game. Idempotent at multiple layers:
+   *  - move already DONE → no-op;
+   *  - `playMove` is idempotent (move already recorded / stale round → accepted:false);
+   *  - CAS on `matches.version` and `moves.version`.
    *
-   * Serialización de turnos: NO usa transacción ni lock pesimista. Si dos turnos de
-   * la misma partida corren en paralelo, el `save` del match hace CAS sobre `version`;
-   * el que pierde lanza OptimisticLockError → el job de BullMQ reintenta sobre estado
-   * fresco. El estado en memoria se descarta al fallar, así que no hay doble conteo.
+   * Turn serialisation: no transaction or pessimistic lock. If two turns for the same
+   * match run concurrently, the match `save` does a CAS on `version`; the loser throws
+   * OptimisticLockError → the BullMQ job retries on fresh state. In-memory state is
+   * discarded on failure, so there is no double-counting.
    */
   async execute(cmd: ProcessTurnCommand): Promise<void> {
     const existing = await this.moves.findByKey(cmd.matchId, cmd.clientMoveId);
     if (existing?.status === 'DONE') {
       return;
     }
-    // El productor ya insertó el move PENDING antes de encolar; si falta, algo se
-    // corrompió. Sin él no hay `version` para el optimistic lock.
+    // The HTTP producer already inserted the move as PENDING before enqueuing; if it is
+    // missing something is corrupted. Without it there is no `version` for the optimistic lock.
     if (!existing) {
       throw new MoveNotFoundError(cmd.matchId, cmd.clientMoveId);
     }
@@ -51,7 +51,7 @@ export class ProcessTurnUseCase {
     const move = cmd.payload?.move as Move;
     const outcome = match.playMove(cmd.playerId, round, move);
 
-    // Solo persistimos el match si el agregado cambió (evita bumps de version en replays).
+    // Only persist the match if the aggregate changed (avoids version bumps on replays).
     if (outcome.accepted) {
       await this.matches.save(match);
     }
@@ -66,8 +66,8 @@ export class ProcessTurnUseCase {
       winnerId: match.winnerId,
     };
 
-    // Optimistic lock del move: si otro escritor lo cambió, complete() lanza y el
-    // job reintenta (y en el reintento verá DONE).
+    // Optimistic lock on the move: if another writer changed it, complete() throws and
+    // the job retries (on retry it will find the move as DONE).
     await this.moves.complete(
       { matchId: cmd.matchId, clientMoveId: cmd.clientMoveId, result },
       existing.version,
@@ -85,8 +85,8 @@ export class ProcessTurnUseCase {
       },
     });
 
-    // `accepted &&`: en un reintento post-FINISHED outcome.finished sigue true pero
-    // accepted es false → no re-emitimos el evento terminal.
+    // `accepted &&`: on a post-FINISHED retry outcome.finished is still true but
+    // accepted is false → we must not re-emit the terminal event.
     if (outcome.accepted && outcome.finished) {
       await this.events.publish({
         name: 'match.finished',

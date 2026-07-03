@@ -1,15 +1,16 @@
-/** Nombre de la cola de procesamiento de turnos. */
+/** Name of the turn-processing queue. */
 export const TURNS_QUEUE = 'turns';
 
-/** Nombre del job dentro de la cola. */
+/** Job name within the queue. */
 export const TURN_JOB = 'process';
 
-/** Evento que dispara el encolado del turno (comando disfrazado de evento). */
+/** Event that triggers turn enqueuing (a command disguised as an event). */
 export const MATCH_MOVE_RECEIVED = 'match.move_received';
 
 /**
- * jobId determinista → idempotencia a nivel de cola (BullMQ ignora add con jobId repetido).
- * BullMQ no permite `:` en custom ids; usamos `_` como separador (ambos son UUID fijos).
+ * Deterministic jobId → idempotency at the queue level (BullMQ ignores add calls
+ * with a duplicate jobId). BullMQ does not allow `:` in custom IDs; we use `_` as
+ * the separator (both values are fixed UUIDs).
  */
 export function turnJobId(matchId: string, clientMoveId: string): string {
   return `${matchId}_${clientMoveId}`;

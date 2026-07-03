@@ -1,7 +1,7 @@
 import { Match } from '../../domain/match';
 import { MatchOrmEntity } from './match.orm-entity';
 
-/** Traduce entre el agregado de dominio y el modelo de persistencia. */
+/** Translates between the domain aggregate and the persistence model. */
 export const MatchMapper = {
   toDomain(row: MatchOrmEntity): Match {
     return Match.rehydrate({
