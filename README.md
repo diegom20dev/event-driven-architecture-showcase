@@ -16,6 +16,12 @@ The goal is to demonstrate how a set of well-chosen patterns — async messaging
 
 ---
 
+## Diagram
+
+<img width="9137" height="4356" alt="Untitled-2025-01-27-1915" src="https://github.com/user-attachments/assets/3ef4fbb5-82d9-4a70-859d-54a9c6078b35" />
+
+---
+
 ## Architecture
 
 Hexagonal architecture (ports and adapters). The domain core has no knowledge of NestJS, databases, or queues — it only exposes **ports** (interfaces) that the infrastructure layer implements.
@@ -69,12 +75,6 @@ CREATED ────────────► WAITING_PLAYERS ─────�
 6. The worker processes both moves, resolves the round using RPS rules, and transitions the match to `FINISHED`
 
 > All state transitions are enforced exclusively inside the domain aggregate (`Match`). No controller or repository decides transitions — if a transition is invalid, the domain throws.
-
----
-
-## Diagram
-
-<img width="9137" height="4356" alt="Untitled-2025-01-27-1915" src="https://github.com/user-attachments/assets/3ef4fbb5-82d9-4a70-859d-54a9c6078b35" />
 
 ---
 
