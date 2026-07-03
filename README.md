@@ -72,6 +72,12 @@ CREATED ────────────► WAITING_PLAYERS ─────�
 
 ---
 
+## Diagram
+
+<img width="9137" height="4356" alt="Untitled-2025-01-27-1915" src="https://github.com/user-attachments/assets/3ef4fbb5-82d9-4a70-859d-54a9c6078b35" />
+
+---
+
 ## Engineering Patterns
 
 ### Event-Driven Architecture — BullMQ + Redis
