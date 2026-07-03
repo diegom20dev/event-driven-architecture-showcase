@@ -1,158 +1,239 @@
 # Match Engine
 
-> Motor de partidas por turnos, dirigido por una **máquina de estados** y **eventos asíncronos**.
-> Proyecto de referencia (showcase backend) — diseñado para demostrar orquestación event-driven,
-> concurrencia e idempotencia en un dominio que se disfruta construir.
+> A turn-based match orchestration system built as a **system design showcase**.
+> Demonstrates event-driven architecture, async processing, concurrency control, and reliability patterns
+> in a Rock-Paper-Scissors domain.
 
-[![CI](https://github.com/<usuario>/match-engine/actions/workflows/ci.yml/badge.svg)](./.github/workflows/ci.yml)
+[![CI](https://github.com/diegomejia/match-engine/actions/workflows/ci.yml/badge.svg)](./.github/workflows/ci.yml)
 
 ---
 
-## Qué es esto (y qué NO es)
+## Overview
 
-Esto **no es un producto**, es una **prueba de ingeniería**. El objetivo es que un hiring manager,
-en ~60 segundos mirando el repo, concluya: _"esta persona construye backend de producción, bien hecho."_
+Match Engine is a backend service that matches two players for a game of Rock-Paper-Scissors, queues their moves, processes them asynchronously, and resolves the outcome. Although the domain is intentionally simple, the engineering patterns underneath are production-grade: the system is designed to handle concurrent move submissions, network retries, and duplicate requests without corrupting match state.
 
-Por dentro es exactamente la especialidad de un sistema de orquestación de órdenes
-(máquina de estados + cola + eventos) — solo que el dominio es un motor de duelos por turnos,
-que es más divertido de construir y demostrar.
+The goal is to demonstrate how a set of well-chosen patterns — async messaging, optimistic locking, idempotency keys, and real-time events — interact to produce a reliable system under concurrency.
 
-## El dominio en una frase
+---
 
-Dos jugadores se unen a una partida. La partida avanza por turnos. Cada turno es un **comando**
-que se valida y se procesa de forma **asíncrona** vía una cola. En cada cambio de estado se
-**emite un evento**. La partida termina cuando se cumple la condición de victoria.
+## Architecture
 
-### Máquina de estados
+Hexagonal architecture (ports and adapters). The domain core has no knowledge of NestJS, databases, or queues — it only exposes **ports** (interfaces) that the infrastructure layer implements.
 
 ```
-            join (1)            join (2) / ready            move*            win condition
- CREATED ───────────► WAITING_PLAYERS ───────────► IN_PROGRESS ───────────► FINISHED
-    │                       │                            │
-    └───────────────────────┴──────── cancel ───────────┴──────────► CANCELLED
+            ┌──────────────────────── infrastructure (adapters) ────────────────────────┐
+            │                                                                             │
+  HTTP ───► matches.controller ──► [application: use cases] ──► [domain: Match]          │
+            │                              │            ▲              │                  │
+            │                              ▼            │ (port)       ▼ (port)           │
+            │                    MatchRepository ◄──────┘      EventPublisher             │
+            │                       (TypeORM)                  (BullMQ / SSE hub)         │
+            │                              ▲                          │                   │
+            │                              │                          ▼                   │
+            │                          PostgreSQL               turn.processor (worker)   │
+            └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Estado            | Significado                              | Transiciones válidas             |
-| ----------------- | ---------------------------------------- | -------------------------------- |
-| `CREATED`         | Partida creada, sin jugadores            | → `WAITING_PLAYERS`, `CANCELLED` |
-| `WAITING_PLAYERS` | Esperando que se una el 2º jugador       | → `IN_PROGRESS`, `CANCELLED`     |
-| `IN_PROGRESS`     | Partida en curso, se procesan turnos     | → `FINISHED`, `CANCELLED`        |
-| `FINISHED`        | Partida terminada (hay ganador o empate) | (terminal)                       |
-| `CANCELLED`       | Partida abortada                         | (terminal)                       |
+| Layer              | Folder                       | Knows about               | Does NOT know about       |
+|--------------------|------------------------------|---------------------------|---------------------------|
+| **Domain**         | `src/matches/domain`         | nothing external (pure TS)| NestJS, DB, queue         |
+| **Application**    | `src/matches/application`    | domain + ports            | concrete DB, HTTP, queue  |
+| **Infrastructure** | `src/matches/infrastructure` | everything (implements ports) | —                    |
 
-> Regla de oro: **toda transición de estado vive en el dominio** (`MatchStatus` / `Match`),
-> nunca en el controller ni en el repositorio. Si una transición es inválida, el dominio lanza error.
+---
 
-## Los dos retos "senior" (el oro de este repo)
-
-Estos son los dos problemas que separan a un junior de un senior. Resuélvelos y **sé capaz de
-explicarlos en una pizarra** — son tu mejor material de entrevista.
-
-1. **Concurrencia** — dos jugadores pueden actuar "a la vez". El sistema debe serializar los
-   turnos de forma consistente (un solo turno se aplica a la vez por partida) sin perder jugadas.
-   _Pista de diseño:_ la cola procesa los turnos de una partida en orden; el estado se protege
-   con bloqueo optimista (versión) o una clave de partición por `matchId`.
-
-2. **Idempotencia** — un cliente puede reenviar la misma jugada (timeout + retry). La misma
-   jugada no debe aplicarse dos veces. _Pista de diseño:_ cada `submit-move` lleva un
-   `clientMoveId` (UUID del cliente); el sistema rechaza/ignora duplicados.
-
-## Arquitectura
-
-Arquitectura **hexagonal** (puertos y adaptadores). El núcleo de dominio no conoce NestJS,
-ni la base de datos, ni la cola: solo expone **puertos** (interfaces) que la infraestructura implementa.
+## Game Flow & State Machine
 
 ```
-            ┌─────────────────────── infrastructure (adaptadores) ───────────────────────┐
-            │                                                                              │
-  HTTP ───► matches.controller ──► [application: use cases] ──► [domain: Match, eventos]   │
-            │                              │            ▲              │                    │
-            │                              ▼            │ (puerto)     ▼ (puerto)           │
-            │                    MatchRepository◄───────┘      EventPublisher               │
-            │                       (TypeORM)                  (cola / bus)                 │
-            │                              ▲                          │                     │
-            │                              │                          ▼                     │
-            │                          PostgreSQL                 turn.processor (worker)   │
-            └──────────────────────────────────────────────────────────────────────────────┘
+           join (1st)          join (2nd)              win condition
+CREATED ────────────► WAITING_PLAYERS ────────────► IN_PROGRESS ────────────► FINISHED
+   │                        │                             │
+   └────────────────────────┴──────── cancel ─────────────┴──────────────► CANCELLED
 ```
 
-Ver decisiones detalladas en [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+| State               | Meaning                                        | Valid transitions                |
+|---------------------|------------------------------------------------|----------------------------------|
+| `CREATED`           | Match created, no players yet                  | → `WAITING_PLAYERS`, `CANCELLED` |
+| `WAITING_PLAYERS`   | Waiting for the second player to join          | → `IN_PROGRESS`, `CANCELLED`     |
+| `IN_PROGRESS`       | Match active, moves are being processed        | → `FINISHED`, `CANCELLED`        |
+| `FINISHED`          | Match resolved (winner determined)             | terminal                         |
+| `CANCELLED`         | Match aborted                                  | terminal                         |
 
-### Capas
+**Step-by-step flow:**
 
-| Capa               | Carpeta                      | Conoce a...               | NO conoce a...           |
-| ------------------ | ---------------------------- | ------------------------- | ------------------------ |
-| **Domain**         | `src/matches/domain`         | nada externo (puro TS)    | NestJS, DB, cola         |
-| **Application**    | `src/matches/application`    | domain + puertos          | DB, HTTP, cola concretos |
-| **Infrastructure** | `src/matches/infrastructure` | todo (implementa puertos) | —                        |
+1. A match is created (`POST /api/matches`) → state: `CREATED`
+2. First player joins with their `playerId` → state: `WAITING_PLAYERS`
+3. Second player joins → state: `IN_PROGRESS`
+4. Player 1 submits their throw (`ROCK`, `PAPER`, or `SCISSORS`) with a `clientMoveId`
+5. Player 2 submits their throw
+6. The worker processes both moves, resolves the round using RPS rules, and transitions the match to `FINISHED`
 
-## Stack
+> All state transitions are enforced exclusively inside the domain aggregate (`Match`). No controller or repository decides transitions — if a transition is invalid, the domain throws.
 
-- **NestJS** + **TypeScript** — framework modular, hexagonal-friendly, Swagger integrado.
-- **PostgreSQL** + **TypeORM** — persistencia (con bloqueo optimista por `version`).
-- **Cola** — `BullMQ` (Redis) en local; el puerto permite cambiar a SQS sin tocar el dominio.
-- **Swagger / OpenAPI** — documentación automática en `/docs`.
-- **Jest** — tests unitarios (dominio) + e2e (API).
-- **Docker** — todo levanta con un comando.
-- **GitHub Actions** — lint + test + build en cada push.
+---
 
-## Cómo correrlo
+## Engineering Patterns
+
+### Event-Driven Architecture — BullMQ + Redis
+
+When a player submits a move, the HTTP handler does not process it inline. Instead, it:
+
+1. Inserts the move record as `PENDING` in Postgres
+2. Publishes a `match.move_received` event
+3. The BullMQ adapter routes that event to the `turns` queue as a job
+4. Returns `202 ACCEPTED` to the client immediately
+
+The `turn.processor` worker dequeues the job and applies the game logic:
+- If only one player has moved → store the choice and wait
+- If both players have moved → compare with RPS rules, update scores, and transition to `FINISHED` if someone reaches `pointsToWin`
+
+This decouples HTTP response time from game processing and makes the system horizontally scalable.
+
+---
+
+### Resilience — BullMQ Retries
+
+The worker is configured with automatic retries and exponential backoff:
+
+```
+attempts: 3, backoff: { type: 'exponential', delay: 1000 }
+```
+
+If a job fails (e.g. a transient DB error), BullMQ retries it automatically. The move record stays `PENDING` during retries. Once all attempts are exhausted, the `onFailed` hook transitions the move to `FAILED` — giving the client a terminal, observable state rather than leaving it stuck as `PENDING` forever.
+
+---
+
+### Concurrency Control — Optimistic Locking
+
+Two moves from different players can arrive simultaneously and be dequeued by different worker instances at the same time. Without coordination, one worker could overwrite the other's update, making it look like only one move was registered.
+
+The match aggregate has a `version` column. Every update uses a Compare-And-Swap:
+
+```sql
+UPDATE matches
+SET scores = ..., choices = ..., version = version + 1
+WHERE id = :id AND version = :expected
+```
+
+If `affected = 0`, another writer modified the row first → `OptimisticLockError` is thrown → BullMQ retries the job on fresh state. No transactions. No blocking locks. The losing worker simply retries.
+
+The same pattern is applied to the `moves` table via TypeORM's `@VersionColumn`.
+
+---
+
+### Reliability — Idempotency
+
+In real-world conditions (mobile clients, unstable connections), a player may submit the same move more than once due to a timeout and retry. Processing the same move twice would corrupt the match.
+
+Each move submission includes a `clientMoveId` (a UUID generated by the client). The server:
+
+1. **Fast-path check**: looks up `(matchId, clientMoveId)` before doing anything — if it already exists, returns the current status immediately without re-enqueuing
+2. **DB-level guard**: `UNIQUE(match_id, client_move_id)` with `INSERT ... ON CONFLICT DO NOTHING` prevents race conditions between concurrent inserts
+3. **Worker-level guard**: the job uses a deterministic `jobId = matchId_clientMoveId` — BullMQ silently ignores duplicate `add()` calls with the same jobId
+
+The client can safely retry with the same `clientMoveId` and will always get a consistent response.
+
+---
+
+### Real-Time Communication — Server-Sent Events (SSE)
+
+Clients can subscribe to a match event stream via `GET /api/matches/:id/events` (SSE). The following domain events are pushed in real time:
+
+| Event                | Trigger                                          |
+|----------------------|--------------------------------------------------|
+| `match.started`      | Both players have joined and the match starts    |
+| `match.move_received`| A move submission was accepted and enqueued      |
+| `match.move_applied` | The worker processed a move                      |
+| `match.finished`     | The match has a winner                           |
+
+The in-process `MatchEventsHub` (RxJS `Subject`) acts as the event bus. The worker and the HTTP server share the same process, so events published by the worker reach SSE clients without any additional infrastructure.
+
+> **Note:** In a multi-instance deployment the Subject would need to be replaced with Redis pub/sub so that worker events reach the HTTP instance holding the SSE connection.
+
+---
+
+## Tech Stack
+
+| Technology         | Role                                                              |
+|--------------------|-------------------------------------------------------------------|
+| **NestJS**         | Framework — modular, DI-friendly, Swagger built-in               |
+| **TypeScript**     | Type safety across all layers                                     |
+| **PostgreSQL**     | Persistence — matches and moves with optimistic locking           |
+| **TypeORM**        | ORM — migrations, `@VersionColumn`, QueryBuilder for CAS updates  |
+| **BullMQ**         | Job queue — async turn processing with retries and backoff        |
+| **Redis**          | BullMQ backend — job storage and queue state                      |
+| **RxJS**           | In-process SSE event bus (`Subject` + `Observable`)               |
+| **Jest**           | Unit tests (domain) + integration + e2e                          |
+| **Docker Compose** | One-command local environment (API + Postgres + Redis)            |
+| **GitHub Actions** | CI — lint, type-check, test, build on every push                 |
+
+---
+
+## API Endpoints
+
+All routes are prefixed with `/api`.
+
+| Method | Route                              | Description                                       |
+|--------|------------------------------------|---------------------------------------------------|
+| `POST` | `/api/matches`                     | Create a match                                    |
+| `POST` | `/api/matches/:id/join`            | Join a match                                      |
+| `POST` | `/api/matches/:id/moves`           | Submit a move (async, idempotent via clientMoveId)|
+| `GET`  | `/api/matches/:id/moves/:clientMoveId` | Poll move status / result                    |
+| `GET`  | `/api/matches/:id`                 | Get match state                                   |
+| `GET`  | `/api/matches/:id/events`          | SSE stream of match events                        |
+| `GET`  | `/health`                          | Health check                                      |
+
+Interactive docs: **`http://localhost:3000/docs`** (Swagger UI)
+
+---
+
+## Running Locally
 
 ```bash
-# 1. Variables de entorno
+# 1. Copy environment variables
 cp .env.example .env
 
-# 2. Levantar todo (API + Postgres + Redis) con Docker
+# 2. Start everything (API + Postgres + Redis) with Docker
 docker compose up --build
 
-# API:     http://localhost:3000
+# API:     http://localhost:3000/api
 # Swagger: http://localhost:3000/docs
 ```
 
-Modo desarrollo (sin Docker para la API):
+**Development mode** (hot reload, no Docker for the API):
 
 ```bash
 npm install
-docker compose up postgres redis -d   # solo dependencias
+docker compose up postgres redis -d   # dependencies only
 npm run start:dev
 ```
 
-## Endpoints (Fase 1)
-
-| Método | Ruta                 | Descripción                     |
-| ------ | -------------------- | ------------------------------- |
-| `POST` | `/matches`           | Crear partida                   |
-| `POST` | `/matches/:id/join`  | Unirse a una partida            |
-| `POST` | `/matches/:id/moves` | Enviar una jugada (idempotente) |
-| `GET`  | `/matches/:id`       | Consultar estado de la partida  |
-| `GET`  | `/health`            | Healthcheck                     |
-
-## Roadmap por fases
-
-- [ ] **Fase 1 — pineable** _(este scaffold)_: API REST + máquina de estados + DB + Swagger + Docker + README.
-- [ ] **Fase 2 — async**: turnos vía cola (BullMQ), eventos de dominio, idempotencia con `clientMoveId`.
-- [ ] **Fase 3 — deploy**: CI/CD a una URL en vivo (Railway / Fly.io / AWS), bloqueo optimista, dead-letter.
-
-## Reglas del juego (para mí)
-
-- La IA teclea; **yo** decido la arquitectura y entiendo cada parte.
-- Prueba ácida: ¿puedo dibujar este sistema en una pizarra y defender cada decisión? Si sí, es mío.
-- Cada `TODO:` en el código es una pieza que yo resuelvo (es el "juego").
-
-## Cómo usar este README con Claude Code
-
-Este archivo es el **brief de arranque**. En tu máquina local:
+**Run tests:**
 
 ```bash
-mkdir match-engine && cd match-engine
-# pega este README.md aquí
-claude
+npm test          # unit tests
+npm run test:e2e  # end-to-end (requires running Postgres + Redis)
 ```
 
-Luego pídele a Claude Code algo como:
-_"Lee el README.md y genera la Fase 1: scaffold NestJS hexagonal con la máquina de estados,
-los endpoints, TypeORM + Postgres, Swagger en /docs, Dockerfile, docker-compose y GitHub Actions.
-Deja la lógica de turnos y la cola como TODO para la Fase 2."_
+---
 
-Recuerda la regla: la IA teclea, **tú** decides la arquitectura y entiendes cada parte.
-Antes de aceptar cada bloque, pregúntate si podrías defenderlo en una pizarra.
+## Project Structure
+
+```
+src/
+├── matches/
+│   ├── domain/                  # Pure domain — no framework dependencies
+│   │   ├── match.ts             # Root aggregate + state machine
+│   │   ├── match-status.ts      # State enum + transition graph
+│   │   ├── rps.ts               # RPS logic (resolveRps, isMove)
+│   │   └── errors.ts            # Domain errors (mapped to HTTP by filter)
+│   ├── application/
+│   │   ├── ports/               # Interfaces (MatchRepository, EventPublisher…)
+│   │   └── use-cases/           # CreateMatch, JoinMatch, SubmitMove, ProcessTurn…
+│   └── infrastructure/
+│       ├── http/                # Controller, DTOs, DomainExceptionFilter
+│       ├── messaging/           # BullMQ publisher, TurnProcessor worker, SSE hub
+│       └── persistence/         # TypeORM entities, repositories, mapper
+├── migrations/                  # TypeORM migration files
+└── config/                      # TypeORM data source configuration
+```
