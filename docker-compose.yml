@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: match
+      POSTGRES_PASSWORD: match
+      POSTGRES_DB: match_engine
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U match -d match_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis está listo para la Fase 2 (cola de turnos con BullMQ).
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # api:
+  #   build: .
+  #   ports:
+  #     - '3000:3000'
+  #   environment:
+  #     PORT: 3000
+  #     DB_HOST: postgres
+  #     DB_PORT: 5432
+  #     DB_USERNAME: match
+  #     DB_PASSWORD: match
+  #     DB_NAME: match_engine
+  #     DB_SYNCHRONIZE: 'true'
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+volumes:
+  pgdata:
