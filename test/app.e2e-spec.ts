@@ -77,7 +77,7 @@ describe('Match Engine (e2e)', () => {
     // Aún sin jugadores → 409
     await request(app.getHttpServer())
       .post(`/matches/${body.id}/moves`)
-      .send({ playerId: 'a', clientMoveId: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e' })
+      .send({ playerId: 'a', clientMoveId: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e', payload: { round: 1, move: 'ROCK' } })
       .expect(409);
 
     await request(app.getHttpServer())
@@ -91,7 +91,7 @@ describe('Match Engine (e2e)', () => {
 
     const move = await request(app.getHttpServer())
       .post(`/matches/${body.id}/moves`)
-      .send({ playerId: 'a', clientMoveId: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e' })
+      .send({ playerId: 'a', clientMoveId: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e', payload: { round: 1, move: 'ROCK' } })
       .expect(202);
     expect(move.body.status).toBe('PENDING');
   });

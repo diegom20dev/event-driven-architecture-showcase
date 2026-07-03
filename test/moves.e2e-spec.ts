@@ -52,7 +52,7 @@ describe('Moves async + idempotency (e2e)', () => {
     const move = {
       playerId: 'a',
       clientMoveId: '7f3d2a1c-9b4e-4c2a-8f1d-2b6e9a0c1d3e',
-      payload: { action: 'attack' },
+      payload: { round: 1, move: 'ROCK' },
     };
 
     const accepted = await request(app.getHttpServer())
@@ -63,7 +63,7 @@ describe('Moves async + idempotency (e2e)', () => {
     expect(accepted.body.deduplicated).toBe(false);
 
     const done = await pollDone(id, move.clientMoveId);
-    expect(done.result.echo).toEqual({ action: 'attack' });
+    expect(done.result.accepted).toBe(true);
   });
 
   it('reintento concurrente: una sola inserción nueva, ambos 202', async () => {
@@ -71,7 +71,7 @@ describe('Moves async + idempotency (e2e)', () => {
     const move = {
       playerId: 'a',
       clientMoveId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
-      payload: { action: 'defend' },
+      payload: { round: 1, move: 'SCISSORS' },
     };
 
     const [r1, r2] = await Promise.all([
