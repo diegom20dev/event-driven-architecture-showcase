@@ -4,7 +4,7 @@
 > Demonstrates event-driven architecture, async processing, concurrency control, and reliability patterns
 > in a Rock-Paper-Scissors domain.
 
-[![CI](https://github.com/diegomejia/match-engine/actions/workflows/ci.yml/badge.svg)](./.github/workflows/ci.yml)
+[![CI](https://github.com/diegom20dev/event-driven-architecture-showcase/actions/workflows/ci.yml/badge.svg)](https://github.com/diegom20dev/event-driven-architecture-showcase/actions/workflows/ci.yml)
 
 ---
 
